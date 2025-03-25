@@ -1,14 +1,182 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "postgresql" 
+  url      = env("DATABASE_URL") 
+}
+
+// ENUM DEFINITIONS
+
+// User roles in the system
+enum Role {
+  ADMIN 
+  INVESTIGATOR 
+  OFFICER 
+  CITIZEN 
+}
+
+// Types of legal cases
+enum CaseType {
+  CRIMINAL 
+  CIVIL 
+}
+
+// Severity levels for cases
+enum CaseLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL 
+}
+
+// Current status of cases
+enum CaseStatus {
+  PENDING 
+  ONGOING 
+  CLOSED 
+}
+
+// Types of persons involved in cases
+enum PersonType {
+  SUSPECT 
+  VICTIM 
+  WITNESS 
+}
+
+// DATA MODELS DEFINITIONS
+
+// User model for system users
+model User {
+  id        String   @id @default(uuid()) 
+  email     String   @unique 
+  password  String 
+  name      String 
+  role      Role 
+  civilId   String?  @unique @map("civil_id") @db.VarChar(20) 
+  createdAt DateTime @default(now()) @map("created_at") 
+  updatedAt DateTime @updatedAt @map("updated_at") 
+
+  // Relationships
+  assignedCases CaseAssignee[] 
+  createdCases  Case[]         @relation("CaseCreator") 
+  reportedCases CaseReporter[] 
+  evidence      Evidence[]
+  caseUpdate    CaseUpdate[]
+
+  @@map("users")
+}
+
+// Criminal/Civil Case Master Record
+model Case {
+  id          String     @id @default(uuid())
+  caseNumber  String     @unique @map("case_number") @db.VarChar(10) 
+  caseName    String     @map("case_name") 
+  description String? 
+  area        String 
+  city        String
+  caseType    CaseType   @map("case_type") 
+  level       CaseLevel 
+  status      CaseStatus @default(PENDING) 
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  // Relationships
+  createdById String         @map("created_by_id") 
+  createdBy   User           @relation("CaseCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignees   CaseAssignee[] 
+  persons     Person[] 
+  reporters   CaseReporter[] 
+  evidences   Evidence[] 
+  updates     CaseUpdate[] 
+
+  // Database Indexes for Common Queries
+  @@index([status]) // Faster status-based filtering
+  @@index([area, city]) // Geographic query optimization
+  @@map("cases")
+}
+
+// Junction Table: Case Assignments
+model CaseAssignee {
+  id         String   @id @default(uuid())
+  caseId     String   @map("case_id") // Reference to cases.id
+  userId     String   @map("user_id") // Reference to users.id
+  assignedAt DateTime @default(now()) @map("assigned_at") 
+
+  // Relationships with Cascading Delete
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([caseId, userId]) // Prevent duplicate assignments
+  @@map("case_assignees")
+}
+
+// Junction Table: Case Reporting
+model CaseReporter {
+  id         String   @id @default(uuid())
+  caseId     String   @map("case_id")
+  userId     String   @map("user_id") 
+  reportedAt DateTime @default(now()) @map("reported_at")
+
+  // Relationships
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([caseId, userId]) // Prevent duplicate reporting
+  @@map("case_reporters")
+}
+
+// Involved Individuals Tracking
+model Person {
+  id        String     @id @default(uuid())
+  type      PersonType 
+  name      String 
+  age       Int? 
+  gender    String?
+  role      String?
+  details   String? 
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  // Parent Case Relationship
+  caseId String @map("case_id")
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("persons")
+}
+
+// Digital Evidence Management
+model Evidence {
+  id          String   @id @default(uuid())
+  name        String
+  description String? 
+  fileUrl     String   @map("file_url") // Firebase Storage URL
+  fileType    String   @map("file_type") // MIME type (e.g., "image/png")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  caseId       String @map("case_id")
+  case         Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedById String @map("uploaded_by_id")
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  @@map("evidences")
+}
+
+// Case History & Audit Log
+model CaseUpdate {
+  id        String   @id @default(uuid())
+  content   String // Update description
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  caseId      String @map("case_id")
+  case        Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  updatedById String @map("updated_by_id") 
+  updatedBy   User   @relation(fields: [updatedById], references: [id])
+
+  @@map("case_updates")
 }
