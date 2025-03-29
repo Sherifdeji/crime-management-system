@@ -9,22 +9,34 @@ const { PrismaClient } = require("@prisma/client");
 const app = express();
 const prisma = new PrismaClient(); // Initialize Prisma
 
+// Import route limiter middleware
+const { globalLimiter } = require("./middleware/rate-limiter.middleware.js");
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+      },
+    },
+  })
+);
 app.use(morgan("dev"));
 app.use(compression());
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    status: "error",
-    message: "Something went wrong!",
-  });
-});
+// Apply global rate limiting middleware to all routes
+app.use(globalLimiter);
+
+// Import authentication routes (Local module)
+const authRoutes = require("./routes/auth.routes.js");
+
+// Register authentication routes
+app.use("/api/auth", authRoutes);
 
 // Default route
 app.get("/", (req, res) => {
@@ -36,6 +48,17 @@ app.use("*", (req, res) => {
   res.status(404).json({
     status: "error",
     message: "Route not found",
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+
+  const statusCode = err.status || 500;
+  res.status(statusCode).json({
+    status: "error",
+    message: err.message || "Something went wrong!",
   });
 });
 
